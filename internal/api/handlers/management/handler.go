@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -64,6 +65,10 @@ type Handler struct {
 	siwcOAuthFactory        func(*config.Config) siwcOAuthService
 	siwcCommitMu            sync.Mutex
 	pluginLoginSaveMu       sync.Mutex
+	// quotaAutoRefresh caches the background quota snapshots for the auto-refresh feature.
+	quotaAutoRefresh quotaAutoRefreshState
+	// lastRequestAt stores the unix timestamp of the most recent proxied API request.
+	lastRequestAt atomic.Int64
 }
 
 type configReloadSnapshot struct {
