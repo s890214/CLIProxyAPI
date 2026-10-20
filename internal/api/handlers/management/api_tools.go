@@ -141,6 +141,23 @@ func (h *Handler) APICall(c *gin.Context) {
 		reqHeaders = map[string]string{}
 	}
 
+	// 配额类上游请求统一走缓存：配额页、认证文件页、Keeper 读同一份数据。
+	// 手动刷新（面板按钮）会带 X-CPA-Quota-Force: 1 穿透缓存，真查上游。
+	forceQuotaFetch := strings.EqualFold(strings.TrimSpace(c.GetHeader(quotaAPICacheForceHeader)), "1") ||
+		c.Query("force") == "1"
+	if !forceQuotaFetch && isQuotaAPIURL(urlStr) {
+		if cached, hit := h.lookupQuotaAPICache(authIndex, method, urlStr, body.Data); hit {
+			c.JSON(http.StatusOK, cached)
+			return
+		}
+	}
+	// 保存请求模板（$TOKEN$ 占位，不含真实 token），供后台自动刷新重放。
+	originalHeaders := make(map[string]string, len(reqHeaders))
+	for key, value := range reqHeaders {
+		originalHeaders[key] = value
+	}
+	originalData := body.Data
+
 	var hostOverride string
 	var token string
 	var tokenResolved bool
@@ -231,6 +248,19 @@ func (h *Handler) APICall(c *gin.Context) {
 	if errReadAll != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": "failed to read response"})
 		return
+	}
+
+	if isQuotaAPIURL(urlStr) {
+		h.storeQuotaAPICache(quotaAPICacheEntry{
+			AuthIndex:  authIndex,
+			Method:     method,
+			URL:        urlStr,
+			Header:     originalHeaders,
+			Data:       originalData,
+			Status:     resp.StatusCode,
+			RespHeader: map[string][]string(resp.Header),
+			Body:       string(respBody),
+		})
 	}
 
 	c.JSON(http.StatusOK, apiCallResponse{

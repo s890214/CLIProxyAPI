@@ -6,6 +6,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"strings"
 	"time"
 
@@ -420,6 +422,43 @@ func isExampleAPIKeySafeModeProxyPath(path string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// registerKeeperProxy exposes the co-located Keeper process (loopback :8080 inside the
+// container) under the same-origin path /keeper, so the management panel can embed it
+// with a relative URL and the host port mapping for Keeper stays optional.
+func (s *Server) registerKeeperProxy() {
+	target, errParse := url.Parse("http://127.0.0.1:8080")
+	if errParse != nil {
+		return
+	}
+	proxy := httputil.NewSingleHostReverseProxy(target)
+	originalDirector := proxy.Director
+	proxy.Director = func(req *http.Request) {
+		originalDirector(req)
+		req.Host = "127.0.0.1:8080"
+	}
+	// Keeper 进程以 APP_BASE_PATH=/keeper 启动，路由与前端资源都在该前缀下，
+	// 因此反向代理必须原样透传路径，不能再剥掉 /keeper，否则 SPA 的
+	// /keeper/api/v1/* 请求会落到 CPA 自己的根路径并 404（页面永远停在“启动中”）。
+	s.engine.Any("/keeper", func(c *gin.Context) {
+		c.Redirect(http.StatusTemporaryRedirect, "/keeper/")
+	})
+	s.engine.Any("/keeper/*path", func(c *gin.Context) {
+		proxy.ServeHTTP(c.Writer, c.Request)
+	})
+}
+
+// quotaActivityMiddleware records the timestamp of proxied API requests so the
+// background quota refresher can skip idle periods. Management traffic is excluded,
+// otherwise merely opening the dashboard would keep triggering refreshes.
+func (s *Server) quotaActivityMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if s != nil && s.mgmt != nil && c.Request != nil && strings.HasPrefix(c.Request.URL.Path, "/v1/") {
+			s.mgmt.MarkRequestActivity()
+		}
+		c.Next()
 	}
 }
 

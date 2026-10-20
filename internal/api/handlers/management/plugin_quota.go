@@ -75,15 +75,26 @@ func (h *Handler) FetchCredentialQuota(c *gin.Context) {
 		return
 	}
 
-	h.mu.Lock()
-	host := h.pluginHost
-	h.mu.Unlock()
-
 	pluginID := strings.TrimSpace(body.PluginID)
 	provider := strings.TrimSpace(body.Provider)
 	if provider == "" {
 		provider = auth.Provider
 	}
+
+	// Cache-first: serve the background refresher's snapshot for this credential
+	// unless the caller forces an upstream query (?force=1). Panel, Keeper and any
+	// other consumer converge on the same snapshot — one upstream query cadence.
+	force := c.Query("force") == "1" || strings.EqualFold(c.Query("force"), "true")
+	if !force {
+		if snapshot, hit := h.cachedQuotaSnapshotFor(auth.Index, provider, pluginID); hit {
+			c.JSON(http.StatusOK, snapshot.Quota)
+			return
+		}
+	}
+
+	h.mu.Lock()
+	host := h.pluginHost
+	h.mu.Unlock()
 
 	if host != nil {
 		req := pluginapi.QuotaFetchRequest{
@@ -269,6 +280,18 @@ func (h *Handler) fetchQuotaForPlugin(c *gin.Context, pluginID, authIndex string
 	if auth == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "auth not found"})
 		return
+	}
+
+	// Cache-first: when the background auto refresher is enabled and holds a fresh
+	// snapshot for this credential, serve it instead of hitting the upstream again.
+	// Consumers (management panel, Keeper) all converge on one query cadence. A
+	// forced refresh (?force=1 / force=true) bypasses the cache.
+	force := c.Query("force") == "1" || strings.EqualFold(c.Query("force"), "true")
+	if !force {
+		if snapshot, hit := h.cachedQuotaSnapshotFor(authIndex, "", pluginID); hit {
+			c.JSON(http.StatusOK, snapshot.Quota)
+			return
+		}
 	}
 
 	h.mu.Lock()
