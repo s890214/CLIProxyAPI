@@ -118,6 +118,13 @@ func (h *Handler) FetchCredentialQuota(c *gin.Context) {
 				c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errFetch)})
 				return
 			}
+			// 手动/直查结果回写共享快照，刷新后仍从缓存秒开。
+			h.storeQuotaSnapshot(quotaSnapshot{
+				PluginID:  pluginID,
+				AuthIndex: auth.Index,
+				Provider:  provider,
+				Quota:     quotaResp,
+			})
 			c.JSON(http.StatusOK, quotaResp)
 			return
 		}
@@ -318,6 +325,12 @@ func (h *Handler) fetchQuotaForPlugin(c *gin.Context, pluginID, authIndex string
 		c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("failed to fetch quota: %v", errFetch)})
 		return
 	}
+	h.storeQuotaSnapshot(quotaSnapshot{
+		PluginID:  pluginID,
+		AuthIndex: auth.Index,
+		Provider:  auth.Provider,
+		Quota:     quotaResp,
+	})
 	c.JSON(http.StatusOK, quotaResp)
 }
 
