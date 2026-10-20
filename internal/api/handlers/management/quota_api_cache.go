@@ -27,8 +27,6 @@ import (
 const (
 	quotaAPICacheFileName   = "quota-api-cache.json"
 	quotaAPICacheForceHeader = "X-CPA-Quota-Force"
-	quotaAPICacheMinAge      = 15 * time.Minute
-	quotaAPICacheMaxAge      = 2 * time.Hour
 	quotaAPICacheMaxBody     = 1 << 20
 	quotaAPICacheMaxEntries  = 500
 )
@@ -97,18 +95,8 @@ func sanitizeQuotaHeaders(in map[string]string) map[string]string {
 	return out
 }
 
-func (h *Handler) quotaAPICacheMaxAge() time.Duration {
-	maxAge := h.quotaAutoRefreshInterval() * 2
-	if maxAge < quotaAPICacheMinAge {
-		maxAge = quotaAPICacheMinAge
-	}
-	if maxAge > quotaAPICacheMaxAge {
-		maxAge = quotaAPICacheMaxAge
-	}
-	return maxAge
-}
-
-// lookupQuotaAPICache 返回仍然新鲜的缓存响应。
+// lookupQuotaAPICache 返回缓存响应。缓存不设过期时间：只有后台自动刷新轮次
+// 或手动强制刷新会覆盖它，因此刷新浏览器、隔天再进页面都还是同一份数据。
 func (h *Handler) lookupQuotaAPICache(authIndex, method, rawURL, data string) (apiCallResponse, bool) {
 	if h == nil || strings.TrimSpace(authIndex) == "" {
 		return apiCallResponse{}, false
@@ -121,9 +109,6 @@ func (h *Handler) lookupQuotaAPICache(authIndex, method, rawURL, data string) (a
 		return apiCallResponse{}, false
 	}
 	if entry.Status < 200 || entry.Status >= 300 {
-		return apiCallResponse{}, false
-	}
-	if time.Since(entry.FetchedAt) > h.quotaAPICacheMaxAge() {
 		return apiCallResponse{}, false
 	}
 	return apiCallResponse{StatusCode: entry.Status, Header: entry.RespHeader, Body: entry.Body}, true
