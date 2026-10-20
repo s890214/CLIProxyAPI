@@ -196,6 +196,7 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	s.loggerToggle = toggle
 
 	engine.Use(corsMiddleware())
+	engine.Use(s.quotaActivityMiddleware())
 	s.wsAuthEnabled.Store(cfg.WebsocketAuth)
 	s.exampleAPIKeySafeModeActive.Store(s.exampleAPIKeySafeModeRequired(cfg))
 	s.handlers.SetPluginHost(optionState.pluginHost)
@@ -219,6 +220,8 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	s.mgmt = managementHandlers.NewHandler(cfg, configFilePath, authManager)
 	s.mgmt.SetPluginHost(optionState.pluginHost)
 	s.mgmt.SetConfigReloadHook(optionState.configReloadHook)
+	// Same-origin proxy to the co-located Keeper process.
+	s.registerKeeperProxy()
 	if optionState.localPassword != "" {
 		s.mgmt.SetLocalPassword(optionState.localPassword)
 	}
@@ -303,6 +306,10 @@ func (s *Server) Start() error {
 	}
 
 	cfg := s.getConfig()
+	// Start the background quota refresher once the management handler and plugin host are ready.
+	if s.mgmt != nil {
+		s.mgmt.StartQuotaAutoRefresh(context.Background())
+	}
 	useTLS := cfg != nil && cfg.TLS.Enable
 	if useTLS {
 		certPath := strings.TrimSpace(cfg.TLS.Cert)

@@ -82,6 +82,10 @@ func (s *Server) registerManagementRoutes() {
 		mgmt.POST("/reset-quota", s.mgmt.ResetQuota)
 
 		mgmt.GET("/quota/providers", s.mgmt.GetQuotaProviders)
+		mgmt.GET("/quota/auto-refresh", s.mgmt.GetQuotaAutoRefresh)
+		mgmt.PUT("/quota/auto-refresh", s.mgmt.PutQuotaAutoRefresh)
+		mgmt.PATCH("/quota/auto-refresh", s.mgmt.PutQuotaAutoRefresh)
+		mgmt.POST("/quota/auto-refresh/now", s.mgmt.PostQuotaAutoRefreshNow)
 		mgmt.POST("/quota/fetch", s.mgmt.FetchCredentialQuota)
 		mgmt.POST("/quota/reset", s.mgmt.ResetCredentialQuota)
 
