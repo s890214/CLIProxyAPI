@@ -407,15 +407,12 @@ func (h *Handler) PostQuotaAutoRefreshNow(c *gin.Context) {
 	c.JSON(http.StatusAccepted, gin.H{"status": "started"})
 }
 
-// cachedQuotaSnapshotFor returns the background snapshot for a credential when the
-// auto refresher is enabled and holds a successful, matching result. Matching is by
-// auth index (unique per credential), optionally narrowed by provider/plugin.
+// cachedQuotaSnapshotFor returns the cached snapshot for a credential. It is served
+// regardless of whether the scheduled refresher is on: turning the timer off must not
+// turn every page load into an upstream query. Matching is by auth index (unique per
+// credential), optionally narrowed by provider/plugin.
 func (h *Handler) cachedQuotaSnapshotFor(authIndex, provider, pluginID string) (quotaSnapshot, bool) {
 	if h == nil {
-		return quotaSnapshot{}, false
-	}
-	settings := h.quotaAutoRefreshSettingsSnapshot()
-	if !settings.Enabled {
 		return quotaSnapshot{}, false
 	}
 	key := strings.TrimSpace(authIndex)
@@ -437,6 +434,25 @@ func (h *Handler) cachedQuotaSnapshotFor(authIndex, provider, pluginID string) (
 	return snapshot, true
 }
 
+
+// storeQuotaSnapshot 把一次成功的手动刷新结果写回共享快照，让其他页面/重启后读到同一份数据。
+func (h *Handler) storeQuotaSnapshot(snapshot quotaSnapshot) {
+	if h == nil || strings.TrimSpace(snapshot.AuthIndex) == "" {
+		return
+	}
+	snapshot.FetchedAt = time.Now().UTC()
+	h.quotaAutoRefresh.mu.Lock()
+	if h.quotaAutoRefresh.snapshots == nil {
+		h.quotaAutoRefresh.snapshots = make(map[string]quotaSnapshot)
+	}
+	h.quotaAutoRefresh.snapshots[snapshot.AuthIndex] = snapshot
+	fresh := make(map[string]quotaSnapshot, len(h.quotaAutoRefresh.snapshots))
+	for key, value := range h.quotaAutoRefresh.snapshots {
+		fresh[key] = value
+	}
+	h.quotaAutoRefresh.mu.Unlock()
+	saveQuotaSnapshotsCache(fresh)
+}
 
 // quotaSnapshotsPath resolves the file holding the newest snapshots (survives restarts).
 func quotaSnapshotsPath() string {
