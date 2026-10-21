@@ -25,7 +25,7 @@ import (
 // 三个页面就自然共用同一份数据，不再各查各的；后台自动刷新任务按学到的请求模板
 // 定期重放，把缓存维持新鲜。手动刷新带 X-CPA-Quota-Force: 1 穿透缓存真查上游。
 const (
-	quotaAPICacheFileName   = "quota-api-cache.json"
+	quotaAPICacheFileName    = "quota-api-cache.json"
 	quotaAPICacheForceHeader = "X-CPA-Quota-Force"
 	quotaAPICacheMaxBody     = 1 << 20
 	quotaAPICacheMaxEntries  = 500
@@ -77,7 +77,7 @@ func quotaAPICacheKey(authIndex, method, rawURL, data string) string {
 }
 
 func quotaAPICachePath() string {
-	return filepath.Join(filepath.Dir(quotaAutoRefreshPath()), quotaAPICacheFileName)
+	return filepath.Join(quotaDataDir(), quotaAPICacheFileName)
 }
 
 // sanitizeQuotaHeaders 只保留可以安全落盘的请求头：占位符 $TOKEN$ 或非 Bearer 常量。
