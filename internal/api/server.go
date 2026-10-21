@@ -196,7 +196,6 @@ func NewServer(cfg *config.Config, authManager *auth.Manager, accessManager *sdk
 	s.loggerToggle = toggle
 
 	engine.Use(corsMiddleware())
-	engine.Use(s.quotaActivityMiddleware())
 	s.wsAuthEnabled.Store(cfg.WebsocketAuth)
 	s.exampleAPIKeySafeModeActive.Store(s.exampleAPIKeySafeModeRequired(cfg))
 	s.handlers.SetPluginHost(optionState.pluginHost)
@@ -306,9 +305,9 @@ func (s *Server) Start() error {
 	}
 
 	cfg := s.getConfig()
-	// Start the background quota refresher once the management handler and plugin host are ready.
+	// Restore persisted quota caches; the scheduler now lives in Keeper.
 	if s.mgmt != nil {
-		s.mgmt.StartQuotaAutoRefresh(context.Background())
+		s.mgmt.LoadQuotaCaches()
 	}
 	useTLS := cfg != nil && cfg.TLS.Enable
 	if useTLS {

@@ -189,18 +189,6 @@ func (s *Server) registerKeeperProxy() {
 	})
 }
 
-// quotaActivityMiddleware records the timestamp of proxied API requests so the
-// background quota refresher can skip idle periods. Management traffic is excluded,
-// otherwise merely opening the dashboard would keep triggering refreshes.
-func (s *Server) quotaActivityMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if s != nil && s.mgmt != nil && c.Request != nil && strings.HasPrefix(c.Request.URL.Path, "/v1/") {
-			s.mgmt.MarkRequestActivity()
-		}
-		c.Next()
-	}
-}
-
 // corsMiddleware returns a Gin middleware handler that adds CORS headers
 // to every response, allowing cross-origin requests.
 //
