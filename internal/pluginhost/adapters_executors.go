@@ -800,7 +800,7 @@ func (a *executorAdapter) Execute(ctx context.Context, auth *coreauth.Auth, req 
 	}
 
 	if reporter != nil {
-		protocol, passThrough := takeUpstreamMetaHeaders(pluginResp.Headers)
+		protocol, passThrough := takeUpstreamMetadata(pluginResp.Metadata)
 		reporter.SetUpstreamProtocol(protocol, passThrough)
 		reporter.RecordFirstPacket()
 		detail := helps.ParsePluginExecutorResponseUsage(prepared.outputFormat.String(), pluginResp.Payload)
@@ -860,7 +860,7 @@ func (a *executorAdapter) ExecuteStream(ctx context.Context, auth *coreauth.Auth
 	}
 
 	if reporter != nil {
-		protocol, passThrough := takeUpstreamMetaHeaders(pluginResp.Headers)
+		protocol, passThrough := takeUpstreamMetadata(pluginResp.Metadata)
 		reporter.SetUpstreamProtocol(protocol, passThrough)
 	}
 
@@ -1179,24 +1179,15 @@ func (a *executorAdapter) HttpRequest(ctx context.Context, auth *coreauth.Auth, 
 	return resp, nil
 }
 
-// Headers a plugin executor uses to report the upstream leg of a request.
-// They are consumed here and never forwarded to the downstream client.
-const (
-	upstreamProtocolHeader    = "X-Cpa-Upstream-Protocol"
-	upstreamPassThroughHeader = "X-Cpa-Upstream-Passthrough"
-)
-
-// takeUpstreamMetaHeaders reads the upstream protocol metadata off a plugin
-// response and removes it so the internal hint cannot leak to the client.
-func takeUpstreamMetaHeaders(headers http.Header) (string, bool) {
-	if headers == nil {
+// takeUpstreamMetadata reads the upstream protocol hint a plugin executor puts
+// in its response metadata bag.
+func takeUpstreamMetadata(metadata map[string]any) (string, bool) {
+	if metadata == nil {
 		return "", false
 	}
-	protocol := strings.TrimSpace(headers.Get(upstreamProtocolHeader))
-	passThrough := strings.TrimSpace(headers.Get(upstreamPassThroughHeader)) == "1"
-	headers.Del(upstreamProtocolHeader)
-	headers.Del(upstreamPassThroughHeader)
-	return protocol, passThrough
+	protocol, _ := metadata["upstream_protocol"].(string)
+	passThrough, _ := metadata["upstream_passthrough"].(bool)
+	return strings.TrimSpace(protocol), passThrough
 }
 
 func buildExecutorRequest(host *Host, provider string, auth *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options) pluginapi.ExecutorRequest {
