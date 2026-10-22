@@ -146,8 +146,6 @@ func (p *usageQueuePlugin) HandleUsage(ctx context.Context, record coreusage.Rec
 	}
 
 	endpoint := resolveEndpoint(ctx)
-	upstreamProtocol := upstreamProtocolFromURL(record.UpstreamURL)
-	upstreamPassThrough := upstreamProtocol != "" && upstreamProtocol == protocolFromEndpoint(endpoint)
 
 	payload, err := json.Marshal(queuedUsageDetail{
 		requestDetail:        detail,
@@ -157,9 +155,9 @@ func (p *usageQueuePlugin) HandleUsage(ctx context.Context, record coreusage.Rec
 		ExecutorType:         executorType,
 		Model:                modelName,
 		Alias:                aliasName,
-		Endpoint:             resolveEndpoint(ctx),
-		UpstreamProtocol:     upstreamProtocol,
-		UpstreamPassThrough:  upstreamPassThrough,
+		Endpoint:             endpoint,
+		UpstreamProtocol:     strings.TrimSpace(record.UpstreamProtocol),
+		UpstreamPassThrough:  record.UpstreamPassThrough,
 		AuthType:             authType,
 		APIKey:               apiKey,
 		IsNativeKey:          isNativeKey,

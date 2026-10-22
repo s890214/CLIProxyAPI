@@ -683,7 +683,6 @@ func (a *executorAdapter) Execute(ctx context.Context, auth *coreauth.Auth, req 
 	}
 
 	var reporter *helps.UsageReporter
-	upstreamURL := &helps.UpstreamURLState{}
 	if auth != nil {
 		modelName := strings.TrimSpace(thinking.ParseSuffix(req.Model).ModelName)
 		if modelName == "" {
@@ -717,15 +716,14 @@ func (a *executorAdapter) Execute(ctx context.Context, auth *coreauth.Auth, req 
 		reporter.StartResponseTTFT()
 	}
 
-	pluginResp, errExecute := a.executor.Execute(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts, upstreamURL))
+	pluginResp, errExecute := a.executor.Execute(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts))
 	if errExecute != nil {
 		return coreexecutor.Response{}, errExecute
 	}
 
 	if reporter != nil {
-		if upstreamURL != nil {
-			reporter.SetUpstreamURL(upstreamURL.URL())
-		}
+		protocol, passThrough := takeUpstreamMetaHeaders(pluginResp.Headers)
+		reporter.SetUpstreamProtocol(protocol, passThrough)
 		reporter.RecordFirstPacket()
 		detail := helps.ParsePluginExecutorResponseUsage(prepared.outputFormat.String(), pluginResp.Payload)
 		reporter.Publish(ctx, detail)
@@ -745,7 +743,6 @@ func (a *executorAdapter) ExecuteStream(ctx context.Context, auth *coreauth.Auth
 	}
 
 	var reporter *helps.UsageReporter
-	upstreamURL := &helps.UpstreamURLState{}
 	if auth != nil {
 		modelName := strings.TrimSpace(thinking.ParseSuffix(req.Model).ModelName)
 		if modelName == "" {
@@ -779,13 +776,14 @@ func (a *executorAdapter) ExecuteStream(ctx context.Context, auth *coreauth.Auth
 		reporter.StartResponseTTFT()
 	}
 
-	pluginResp, errExecuteStream := a.executor.ExecuteStream(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts, upstreamURL))
+	pluginResp, errExecuteStream := a.executor.ExecuteStream(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts))
 	if errExecuteStream != nil {
 		return nil, errExecuteStream
 	}
 
-	if reporter != nil && upstreamURL != nil {
-		reporter.SetUpstreamURL(upstreamURL.URL())
+	if reporter != nil {
+		protocol, passThrough := takeUpstreamMetaHeaders(pluginResp.Headers)
+		reporter.SetUpstreamProtocol(protocol, passThrough)
 	}
 
 	chunks := a.observeAndTranslateExecutorStream(ctx, prepared, pluginResp.Chunks, reporter)
@@ -1064,15 +1062,27 @@ func (a *executorAdapter) HttpRequest(ctx context.Context, auth *coreauth.Auth, 
 	return resp, nil
 }
 
-func buildExecutorRequest(host *Host, provider string, auth *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options, states ...*helps.UpstreamURLState) pluginapi.ExecutorRequest {
-	var upstreamURL *helps.UpstreamURLState
-	if len(states) > 0 {
-		upstreamURL = states[0]
+// Headers a plugin executor uses to report the upstream leg of a request.
+// They are consumed here and never forwarded to the downstream client.
+const (
+	upstreamProtocolHeader    = "X-Cpa-Upstream-Protocol"
+	upstreamPassThroughHeader = "X-Cpa-Upstream-Passthrough"
+)
+
+// takeUpstreamMetaHeaders reads the upstream protocol metadata off a plugin
+// response and removes it so the internal hint cannot leak to the client.
+func takeUpstreamMetaHeaders(headers http.Header) (string, bool) {
+	if headers == nil {
+		return "", false
 	}
-	client := host.newHTTPClientWithProxy(auth, opts.ProxyURL, provider)
-	if httpClient, ok := client.(*hostHTTPClient); ok {
-		httpClient.upstreamURL = upstreamURL
-	}
+	protocol := strings.TrimSpace(headers.Get(upstreamProtocolHeader))
+	passThrough := strings.TrimSpace(headers.Get(upstreamPassThroughHeader)) == "1"
+	headers.Del(upstreamProtocolHeader)
+	headers.Del(upstreamPassThroughHeader)
+	return protocol, passThrough
+}
+
+func buildExecutorRequest(host *Host, provider string, auth *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options) pluginapi.ExecutorRequest {
 	return pluginapi.ExecutorRequest{
 		AuthID:          authID(auth),
 		AuthProvider:    authProvider(auth),
@@ -1089,7 +1099,7 @@ func buildExecutorRequest(host *Host, provider string, auth *coreauth.Auth, req 
 		StorageJSON:     storageJSONFromAuth(auth),
 		AuthMetadata:    cloneAnyMap(authMetadata(auth)),
 		AuthAttributes:  authAttributes(auth),
-		HTTPClient:      client,
+		HTTPClient:      host.newHTTPClientWithProxy(auth, opts.ProxyURL, provider),
 	}
 }
 
