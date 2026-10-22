@@ -145,6 +145,10 @@ func (p *usageQueuePlugin) HandleUsage(ctx context.Context, record coreusage.Rec
 		ResponseHeaders:  record.ResponseHeaders,
 	}
 
+	endpoint := resolveEndpoint(ctx)
+	upstreamProtocol := upstreamProtocolFromURL(record.UpstreamURL)
+	upstreamPassThrough := upstreamProtocol != "" && upstreamProtocol == protocolFromEndpoint(endpoint)
+
 	payload, err := json.Marshal(queuedUsageDetail{
 		requestDetail:        detail,
 		AccountingVersion:    coreusage.TokenAccountingSchemaVersion,
@@ -154,6 +158,8 @@ func (p *usageQueuePlugin) HandleUsage(ctx context.Context, record coreusage.Rec
 		Model:                modelName,
 		Alias:                aliasName,
 		Endpoint:             resolveEndpoint(ctx),
+		UpstreamProtocol:     upstreamProtocol,
+		UpstreamPassThrough:  upstreamPassThrough,
 		AuthType:             authType,
 		APIKey:               apiKey,
 		IsNativeKey:          isNativeKey,
@@ -187,6 +193,8 @@ type queuedUsageDetail struct {
 	Model                string                   `json:"model"`
 	Alias                string                   `json:"alias"`
 	Endpoint             string                   `json:"endpoint"`
+	UpstreamProtocol     string                   `json:"upstream_protocol,omitempty"`
+	UpstreamPassThrough  bool                     `json:"upstream_passthrough,omitempty"`
 	AuthType             string                   `json:"auth_type"`
 	APIKey               string                   `json:"api_key"`
 	IsNativeKey          bool                     `json:"is_native_key"`

@@ -31,6 +31,8 @@ type UsageReporter struct {
 	selectionID          string
 	provider             string
 	baseURL              string
+	upstreamURLMu        sync.RWMutex
+	upstreamURL          string
 	executorType         string
 	model                string
 	alias                string
@@ -652,6 +654,25 @@ func (r *UsageReporter) AccessProvider() string {
 	return r.accessProvider
 }
 
+// SetUpstreamURL records the exact upstream request URL of this execution.
+func (r *UsageReporter) SetUpstreamURL(url string) {
+	if r == nil {
+		return
+	}
+	r.upstreamURLMu.Lock()
+	r.upstreamURL = strings.TrimSpace(url)
+	r.upstreamURLMu.Unlock()
+}
+
+func (r *UsageReporter) currentUpstreamURL() string {
+	if r == nil {
+		return ""
+	}
+	r.upstreamURLMu.RLock()
+	defer r.upstreamURLMu.RUnlock()
+	return r.upstreamURL
+}
+
 func (r *UsageReporter) buildRecord(detail usage.Detail, failed bool, failures ...usage.Failure) usage.Record {
 	var fail usage.Failure
 	if len(failures) > 0 {
@@ -679,6 +700,7 @@ func (r *UsageReporter) buildRecordForModel(model string, detail usage.Detail, f
 		SelectionID:          r.selectionID,
 		Provider:             r.provider,
 		BaseURL:              r.baseURL,
+		UpstreamURL:          r.currentUpstreamURL(),
 		ExecutorType:         r.executorType,
 		Model:                model,
 		Alias:                r.alias,
