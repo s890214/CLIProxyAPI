@@ -32,6 +32,9 @@ type hostHTTPClient struct {
 	auth            *coreauth.Auth
 	provider        string
 	requestProxyURL string
+	// upstreamURL receives the exact URL of each upstream request issued
+	// through this per-execution client.
+	upstreamURL *helps.UpstreamURLState
 }
 
 func (h *Host) newHTTPClient(auth *coreauth.Auth, providers ...string) pluginapi.HostHTTPClient {
@@ -158,7 +161,9 @@ func (c *hostHTTPClient) doHTTP(ctx context.Context, req pluginapi.HTTPRequest) 
 		return nil, cfg, nil, fmt.Errorf("create host http request: %w", errNewRequest)
 	}
 	httpReq.Header = cloneHeader(req.Headers)
-	helps.NoteUpstreamURL(ctx, req.URL)
+	if c.upstreamURL != nil {
+		c.upstreamURL.Set(req.URL)
+	}
 	c.recordHTTPRequest(ctx, cfg, httpReq, req.Body)
 	client, cleanup, errClient := c.newHTTPClientForRequest(ctx, cfg, req, httpReq)
 	if errClient != nil {
