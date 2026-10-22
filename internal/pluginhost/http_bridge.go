@@ -158,6 +158,7 @@ func (c *hostHTTPClient) doHTTP(ctx context.Context, req pluginapi.HTTPRequest) 
 		return nil, cfg, nil, fmt.Errorf("create host http request: %w", errNewRequest)
 	}
 	httpReq.Header = cloneHeader(req.Headers)
+	helps.NoteUpstreamURL(ctx, req.URL)
 	c.recordHTTPRequest(ctx, cfg, httpReq, req.Body)
 	client, cleanup, errClient := c.newHTTPClientForRequest(ctx, cfg, req, httpReq)
 	if errClient != nil {
