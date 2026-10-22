@@ -33,12 +33,13 @@ func (a *rpcPluginAdapter) ExecuteStream(ctx context.Context, req pluginapi.Exec
 			out <- chunk
 		}
 		close(out)
-		return pluginapi.ExecutorStreamResponse{Headers: resp.Headers, Chunks: out}, nil
+		return pluginapi.ExecutorStreamResponse{Headers: resp.Headers, Metadata: resp.Metadata, Chunks: out}, nil
 	}
 	// Async streaming plugins can return before they finish emitting chunks, so keep callbacks alive until the stream ends.
 	return pluginapi.ExecutorStreamResponse{
-		Headers: resp.Headers,
-		Chunks:  cleanupWhenStreamDone(ctx, chunks, cleanup),
+		Headers:  resp.Headers,
+		Metadata: resp.Metadata,
+		Chunks:   cleanupWhenStreamDone(ctx, chunks, cleanup),
 	}, nil
 }
 
