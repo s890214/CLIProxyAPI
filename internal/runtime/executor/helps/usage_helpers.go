@@ -31,8 +31,9 @@ type UsageReporter struct {
 	selectionID          string
 	provider             string
 	baseURL              string
-	upstreamURLMu        sync.RWMutex
-	upstreamURL          string
+	upstreamMu           sync.RWMutex
+	upstreamProtocol     string
+	upstreamPassThrough  bool
 	executorType         string
 	model                string
 	alias                string
@@ -654,23 +655,25 @@ func (r *UsageReporter) AccessProvider() string {
 	return r.accessProvider
 }
 
-// SetUpstreamURL records the exact upstream request URL of this execution.
-func (r *UsageReporter) SetUpstreamURL(url string) {
+// SetUpstreamProtocol records the wire protocol and pass-through flag that the
+// plugin executor used towards the upstream.
+func (r *UsageReporter) SetUpstreamProtocol(protocol string, passThrough bool) {
 	if r == nil {
 		return
 	}
-	r.upstreamURLMu.Lock()
-	r.upstreamURL = strings.TrimSpace(url)
-	r.upstreamURLMu.Unlock()
+	r.upstreamMu.Lock()
+	r.upstreamProtocol = strings.TrimSpace(protocol)
+	r.upstreamPassThrough = passThrough
+	r.upstreamMu.Unlock()
 }
 
-func (r *UsageReporter) currentUpstreamURL() string {
+func (r *UsageReporter) currentUpstream() (string, bool) {
 	if r == nil {
-		return ""
+		return "", false
 	}
-	r.upstreamURLMu.RLock()
-	defer r.upstreamURLMu.RUnlock()
-	return r.upstreamURL
+	r.upstreamMu.RLock()
+	defer r.upstreamMu.RUnlock()
+	return r.upstreamProtocol, r.upstreamPassThrough
 }
 
 func (r *UsageReporter) buildRecord(detail usage.Detail, failed bool, failures ...usage.Failure) usage.Record {
@@ -694,13 +697,15 @@ func (r *UsageReporter) buildRecordForModel(model string, detail usage.Detail, f
 	if model == r.model {
 		responseModel = r.ResponseModel()
 	}
+	upstreamProtocol, upstreamPassThrough := r.currentUpstream()
 	return usage.Record{
 		RequestID:            r.requestID,
 		TraceID:              r.traceID,
 		SelectionID:          r.selectionID,
 		Provider:             r.provider,
 		BaseURL:              r.baseURL,
-		UpstreamURL:          r.currentUpstreamURL(),
+		UpstreamProtocol:     upstreamProtocol,
+		UpstreamPassThrough:  upstreamPassThrough,
 		ExecutorType:         r.executorType,
 		Model:                model,
 		Alias:                r.alias,
