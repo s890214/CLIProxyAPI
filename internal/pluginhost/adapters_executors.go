@@ -683,6 +683,7 @@ func (a *executorAdapter) Execute(ctx context.Context, auth *coreauth.Auth, req 
 	}
 
 	var reporter *helps.UsageReporter
+	ctx, upstreamURL := helps.WithUpstreamURLState(ctx)
 	if auth != nil {
 		modelName := strings.TrimSpace(thinking.ParseSuffix(req.Model).ModelName)
 		if modelName == "" {
@@ -722,6 +723,9 @@ func (a *executorAdapter) Execute(ctx context.Context, auth *coreauth.Auth, req 
 	}
 
 	if reporter != nil {
+		if upstreamURL != nil {
+			reporter.SetUpstreamURL(upstreamURL.URL())
+		}
 		reporter.RecordFirstPacket()
 		detail := helps.ParsePluginExecutorResponseUsage(prepared.outputFormat.String(), pluginResp.Payload)
 		reporter.Publish(ctx, detail)
@@ -741,6 +745,7 @@ func (a *executorAdapter) ExecuteStream(ctx context.Context, auth *coreauth.Auth
 	}
 
 	var reporter *helps.UsageReporter
+	ctx, upstreamURL := helps.WithUpstreamURLState(ctx)
 	if auth != nil {
 		modelName := strings.TrimSpace(thinking.ParseSuffix(req.Model).ModelName)
 		if modelName == "" {
@@ -777,6 +782,10 @@ func (a *executorAdapter) ExecuteStream(ctx context.Context, auth *coreauth.Auth
 	pluginResp, errExecuteStream := a.executor.ExecuteStream(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts))
 	if errExecuteStream != nil {
 		return nil, errExecuteStream
+	}
+
+	if reporter != nil && upstreamURL != nil {
+		reporter.SetUpstreamURL(upstreamURL.URL())
 	}
 
 	chunks := a.observeAndTranslateExecutorStream(ctx, prepared, pluginResp.Chunks, reporter)

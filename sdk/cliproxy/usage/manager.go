@@ -30,6 +30,9 @@ type Record struct {
 	Provider string
 	// BaseURL stores the configured upstream base URL when available.
 	BaseURL string
+	// UpstreamURL stores the exact upstream request URL of this execution
+	// (plugin executors know the concrete endpoint path). Empty when unknown.
+	UpstreamURL string
 	// ExecutorType stores the concrete executor type that handled the request.
 	ExecutorType string
 	Model        string
