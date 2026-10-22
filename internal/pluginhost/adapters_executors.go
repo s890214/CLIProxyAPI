@@ -683,7 +683,7 @@ func (a *executorAdapter) Execute(ctx context.Context, auth *coreauth.Auth, req 
 	}
 
 	var reporter *helps.UsageReporter
-	ctx, upstreamURL := helps.WithUpstreamURLState(ctx)
+	upstreamURL := &helps.UpstreamURLState{}
 	if auth != nil {
 		modelName := strings.TrimSpace(thinking.ParseSuffix(req.Model).ModelName)
 		if modelName == "" {
@@ -717,7 +717,7 @@ func (a *executorAdapter) Execute(ctx context.Context, auth *coreauth.Auth, req 
 		reporter.StartResponseTTFT()
 	}
 
-	pluginResp, errExecute := a.executor.Execute(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts))
+	pluginResp, errExecute := a.executor.Execute(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts, upstreamURL))
 	if errExecute != nil {
 		return coreexecutor.Response{}, errExecute
 	}
@@ -745,7 +745,7 @@ func (a *executorAdapter) ExecuteStream(ctx context.Context, auth *coreauth.Auth
 	}
 
 	var reporter *helps.UsageReporter
-	ctx, upstreamURL := helps.WithUpstreamURLState(ctx)
+	upstreamURL := &helps.UpstreamURLState{}
 	if auth != nil {
 		modelName := strings.TrimSpace(thinking.ParseSuffix(req.Model).ModelName)
 		if modelName == "" {
@@ -779,7 +779,7 @@ func (a *executorAdapter) ExecuteStream(ctx context.Context, auth *coreauth.Auth
 		reporter.StartResponseTTFT()
 	}
 
-	pluginResp, errExecuteStream := a.executor.ExecuteStream(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts))
+	pluginResp, errExecuteStream := a.executor.ExecuteStream(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts, upstreamURL))
 	if errExecuteStream != nil {
 		return nil, errExecuteStream
 	}
@@ -1064,7 +1064,15 @@ func (a *executorAdapter) HttpRequest(ctx context.Context, auth *coreauth.Auth, 
 	return resp, nil
 }
 
-func buildExecutorRequest(host *Host, provider string, auth *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options) pluginapi.ExecutorRequest {
+func buildExecutorRequest(host *Host, provider string, auth *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options, states ...*helps.UpstreamURLState) pluginapi.ExecutorRequest {
+	var upstreamURL *helps.UpstreamURLState
+	if len(states) > 0 {
+		upstreamURL = states[0]
+	}
+	client := host.newHTTPClientWithProxy(auth, opts.ProxyURL, provider)
+	if httpClient, ok := client.(*hostHTTPClient); ok {
+		httpClient.upstreamURL = upstreamURL
+	}
 	return pluginapi.ExecutorRequest{
 		AuthID:          authID(auth),
 		AuthProvider:    authProvider(auth),
@@ -1081,7 +1089,7 @@ func buildExecutorRequest(host *Host, provider string, auth *coreauth.Auth, req 
 		StorageJSON:     storageJSONFromAuth(auth),
 		AuthMetadata:    cloneAnyMap(authMetadata(auth)),
 		AuthAttributes:  authAttributes(auth),
-		HTTPClient:      host.newHTTPClientWithProxy(auth, opts.ProxyURL, provider),
+		HTTPClient:      client,
 	}
 }
 
