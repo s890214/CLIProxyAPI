@@ -1,7 +1,6 @@
 package helps
 
 import (
-	"context"
 	"strings"
 	"sync"
 )
@@ -35,29 +34,4 @@ func (s *UpstreamURLState) URL() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.url
-}
-
-type upstreamURLStateKey struct{}
-
-// WithUpstreamURLState attaches a mutable holder for the exact upstream URL.
-func WithUpstreamURLState(ctx context.Context) (context.Context, *UpstreamURLState) {
-	state := &UpstreamURLState{}
-	if ctx == nil {
-		ctx = context.Background()
-	}
-	return context.WithValue(ctx, upstreamURLStateKey{}, state), state
-}
-
-// UpstreamURLStateFromContext returns the holder set by WithUpstreamURLState.
-func UpstreamURLStateFromContext(ctx context.Context) *UpstreamURLState {
-	if ctx == nil {
-		return nil
-	}
-	state, _ := ctx.Value(upstreamURLStateKey{}).(*UpstreamURLState)
-	return state
-}
-
-// NoteUpstreamURL records the URL of the upstream request about to be issued.
-func NoteUpstreamURL(ctx context.Context, url string) {
-	UpstreamURLStateFromContext(ctx).Set(url)
 }
