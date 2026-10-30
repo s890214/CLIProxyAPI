@@ -760,13 +760,16 @@ func (a *executorAdapter) Execute(ctx context.Context, auth *coreauth.Auth, req 
 		return coreexecutor.Response{}, fmt.Errorf("plugin executor %s is unavailable", a.Identifier())
 	}
 
+	upstreamState := &helps.UpstreamURLState{}
+	execCtx := helps.WithUpstreamURLState(ctx, upstreamState)
+
 	var reporter *helps.UsageReporter
 	if auth != nil {
 		modelName := strings.TrimSpace(thinking.ParseSuffix(req.Model).ModelName)
 		if modelName == "" {
 			modelName = req.Model
 		}
-		reporter = helps.NewExecutorUsageReporter(ctx, a, modelName, auth)
+		reporter = helps.NewExecutorUsageReporter(execCtx, a, modelName, auth)
 	}
 
 	defer func() {
@@ -794,14 +797,12 @@ func (a *executorAdapter) Execute(ctx context.Context, auth *coreauth.Auth, req 
 		reporter.StartResponseTTFT()
 	}
 
-	pluginResp, errExecute := a.executor.Execute(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts))
+	pluginResp, errExecute := a.executor.Execute(execCtx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts))
 	if errExecute != nil {
 		return coreexecutor.Response{}, errExecute
 	}
 
 	if reporter != nil {
-		protocol, passThrough := takeUpstreamMetadata(pluginResp.Metadata)
-		reporter.SetUpstreamProtocol(protocol, passThrough)
 		reporter.RecordFirstPacket()
 		detail := helps.ParsePluginExecutorResponseUsage(prepared.outputFormat.String(), pluginResp.Payload)
 		reporter.Publish(ctx, detail)
@@ -820,13 +821,16 @@ func (a *executorAdapter) ExecuteStream(ctx context.Context, auth *coreauth.Auth
 		return nil, fmt.Errorf("plugin executor %s is unavailable", a.Identifier())
 	}
 
+	upstreamState := &helps.UpstreamURLState{}
+	execCtx := helps.WithUpstreamURLState(ctx, upstreamState)
+
 	var reporter *helps.UsageReporter
 	if auth != nil {
 		modelName := strings.TrimSpace(thinking.ParseSuffix(req.Model).ModelName)
 		if modelName == "" {
 			modelName = req.Model
 		}
-		reporter = helps.NewExecutorUsageReporter(ctx, a, modelName, auth)
+		reporter = helps.NewExecutorUsageReporter(execCtx, a, modelName, auth)
 	}
 
 	defer func() {
@@ -854,14 +858,9 @@ func (a *executorAdapter) ExecuteStream(ctx context.Context, auth *coreauth.Auth
 		reporter.StartResponseTTFT()
 	}
 
-	pluginResp, errExecuteStream := a.executor.ExecuteStream(ctx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts))
+	pluginResp, errExecuteStream := a.executor.ExecuteStream(execCtx, buildExecutorRequest(a.host, a.provider, auth, prepared.req, prepared.opts))
 	if errExecuteStream != nil {
 		return nil, errExecuteStream
-	}
-
-	if reporter != nil {
-		protocol, passThrough := takeUpstreamMetadata(pluginResp.Metadata)
-		reporter.SetUpstreamProtocol(protocol, passThrough)
 	}
 
 	chunks := a.observeAndTranslateExecutorStream(ctx, prepared, pluginResp.Chunks, reporter)
@@ -1177,17 +1176,6 @@ func (a *executorAdapter) HttpRequest(ctx context.Context, auth *coreauth.Auth, 
 		Request:    req,
 	}
 	return resp, nil
-}
-
-// takeUpstreamMetadata reads the upstream protocol hint a plugin executor puts
-// in its response metadata bag.
-func takeUpstreamMetadata(metadata map[string]any) (string, bool) {
-	if metadata == nil {
-		return "", false
-	}
-	protocol, _ := metadata["upstream_protocol"].(string)
-	passThrough, _ := metadata["upstream_passthrough"].(bool)
-	return strings.TrimSpace(protocol), passThrough
 }
 
 func buildExecutorRequest(host *Host, provider string, auth *coreauth.Auth, req coreexecutor.Request, opts coreexecutor.Options) pluginapi.ExecutorRequest {

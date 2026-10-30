@@ -1108,8 +1108,6 @@ type ExecutorResponse struct {
 type ExecutorStreamResponse struct {
 	// Headers contains response headers available before stream chunks.
 	Headers http.Header
-	// Metadata is an extension bag for executor-specific response data.
-	Metadata map[string]any
 	// Chunks yields streaming payload chunks until the channel closes.
 	Chunks <-chan ExecutorStreamChunk
 }

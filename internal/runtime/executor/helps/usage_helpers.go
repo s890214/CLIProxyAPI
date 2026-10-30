@@ -31,9 +31,6 @@ type UsageReporter struct {
 	selectionID          string
 	provider             string
 	baseURL              string
-	upstreamMu           sync.RWMutex
-	upstreamProtocol     string
-	upstreamPassThrough  bool
 	executorType         string
 	model                string
 	alias                string
@@ -73,6 +70,16 @@ type UsageReporter struct {
 	// upstreamModel holds the canonical upstream model expected to be served when
 	// it differs from the requested model (e.g. local Kimi model mappings).
 	upstreamModel string
+
+	upstreamURLMu sync.RWMutex
+	// upstreamURL is the concrete upstream request URL recorded by the round
+	// tripper of this execution.
+	upstreamURL string
+	// upstreamState is the shared holder the plugin executor path records into.
+	upstreamState *UpstreamURLState
+	// clientProtocol is the wire protocol of the inbound client request, used to
+	// tell a pass-through from a translated upstream leg.
+	clientProtocol string
 }
 
 type usageExecutor interface {
@@ -147,6 +154,9 @@ func NewUsageReporter(ctx context.Context, provider, model string, auth *cliprox
 		serviceTier:     usage.ServiceTierFromContext(ctx),
 		generate:        usage.GenerateFromContext(ctx),
 		stream:          usage.StreamFromContext(ctx),
+
+		clientProtocol: ProtocolFromPath(ClientRequestPath(ctx)),
+		upstreamState:  UpstreamURLStateFromContext(ctx),
 	}
 	if auth != nil {
 		reporter.authID = auth.ID
@@ -655,25 +665,63 @@ func (r *UsageReporter) AccessProvider() string {
 	return r.accessProvider
 }
 
-// SetUpstreamProtocol records the wire protocol and pass-through flag that the
-// plugin executor used towards the upstream.
-func (r *UsageReporter) SetUpstreamProtocol(protocol string, passThrough bool) {
+// SetUpstreamURL records the concrete upstream request URL of this execution.
+// The reporter derives the wire protocol and the pass-through flag from it, so
+// every executor path reports the same way without protocol-specific knowledge.
+func (r *UsageReporter) SetUpstreamURL(rawURL string) {
 	if r == nil {
 		return
 	}
-	r.upstreamMu.Lock()
-	r.upstreamProtocol = strings.TrimSpace(protocol)
-	r.upstreamPassThrough = passThrough
-	r.upstreamMu.Unlock()
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return
+	}
+	r.upstreamURLMu.Lock()
+	r.upstreamURL = rawURL
+	r.upstreamURLMu.Unlock()
 }
 
+func (r *UsageReporter) recordUpstreamRequest(req *http.Request) {
+	if r == nil || req == nil || req.URL == nil {
+		return
+	}
+	// The tracked client also serves token refresh and quota calls; they must not
+	// overwrite the inference leg that produced the response.
+	if ProtocolFromPath(req.URL.Path) == "" {
+		return
+	}
+	r.SetUpstreamURL(req.URL.String())
+}
+
+// upstreamURLValue returns the upstream URL seen for this execution, preferring
+// the shared holder used by the plugin path when it carries a value.
+func (r *UsageReporter) upstreamURLValue() string {
+	if r == nil {
+		return ""
+	}
+	if stateURL := r.upstreamState.URL(); stateURL != "" {
+		return stateURL
+	}
+	r.upstreamURLMu.RLock()
+	defer r.upstreamURLMu.RUnlock()
+	return r.upstreamURL
+}
+
+// currentUpstream resolves the upstream wire protocol and whether the leg was a
+// pass-through of the client's protocol.
 func (r *UsageReporter) currentUpstream() (string, bool) {
 	if r == nil {
 		return "", false
 	}
-	r.upstreamMu.RLock()
-	defer r.upstreamMu.RUnlock()
-	return r.upstreamProtocol, r.upstreamPassThrough
+	protocol := ProtocolFromPath(r.upstreamURLValue())
+	if protocol == "" {
+		return "", false
+	}
+	clientProtocol := strings.TrimSpace(r.clientProtocol)
+	if clientProtocol == "" {
+		return protocol, false
+	}
+	return protocol, protocol == clientProtocol
 }
 
 func (r *UsageReporter) buildRecord(detail usage.Detail, failed bool, failures ...usage.Failure) usage.Record {
@@ -813,6 +861,7 @@ type usageTTFTRoundTripper struct {
 }
 
 func (t usageTTFTRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	t.reporter.recordUpstreamRequest(req)
 	cliproxyexecutor.MarkUpstreamAttempt(req.Context())
 	t.reporter.StartResponseTTFT()
 	resp, errRoundTrip := t.base.RoundTrip(req)
