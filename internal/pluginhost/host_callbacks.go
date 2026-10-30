@@ -11,6 +11,7 @@ import (
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/clienterror"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/interfaces"
 	"github.com/router-for-me/CLIProxyAPI/v8/internal/logging"
+	"github.com/router-for-me/CLIProxyAPI/v8/internal/runtime/executor/helps"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/api/handlers"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginabi"
 	"github.com/router-for-me/CLIProxyAPI/v8/sdk/pluginapi"
@@ -207,6 +208,7 @@ func (h *Host) callHostHTTPDo(ctx context.Context, request []byte) ([]byte, erro
 		return nil, errAcquire
 	}
 	defer operation.finish()
+	helps.RecordUpstreamURLString(operation.ctx, httpReq.URL)
 	resp, errDo := h.newHTTPClientWithProxy(nil, oauthProxyURLFromContext(operation.ctx)).Do(operation.ctx, httpReq)
 	if errDo != nil {
 		return nil, errDo
@@ -228,6 +230,7 @@ func (h *Host) callHostHTTPDoStream(ctx context.Context, request []byte) ([]byte
 		return nil, errAcquire
 	}
 	streamCtx := operation.ctx
+	helps.RecordUpstreamURLString(streamCtx, httpReq.URL)
 	streamID := ""
 	keepStream := false
 	defer func() {
