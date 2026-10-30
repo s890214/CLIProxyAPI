@@ -67,9 +67,10 @@ func ClientRequestPath(ctx context.Context) string {
 }
 
 // UpstreamURLState carries the concrete upstream request URL of one execution.
-// Native executors record it through the reporter's round tripper; plugin
-// executors record it from the host HTTP callback, which runs on a different
-// goroutine chain than the executor call, hence the shared holder.
+// Native executors record it through the reporter's round tripper. Plugin
+// executors record it from the host HTTP bridge, which runs on a fresh context
+// the host builds per callback, so the executor context never reaches it: the
+// host-issued callback id is what resolves back to this holder.
 type UpstreamURLState struct {
 	mu  sync.RWMutex
 	url string
@@ -103,7 +104,8 @@ func (s *UpstreamURLState) URL() string {
 type upstreamURLStateKey struct{}
 
 // WithUpstreamURLState attaches a per-execution upstream URL holder to ctx. The
-// plugin executor path relies on this: its HTTP bridge cannot see the reporter.
+// plugin executor path relies on this: its HTTP bridge cannot see the reporter,
+// and reaches the holder only through the callback context registry.
 func WithUpstreamURLState(ctx context.Context, state *UpstreamURLState) context.Context {
 	if state == nil {
 		return ctx
